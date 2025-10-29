@@ -1,36 +1,5 @@
-/*
-  # Create Grocery Store Database Schema
-
-  1. New Tables
-    - `categories`
-      - `id` (uuid, primary key)
-      - `name` (text, unique)
-      - `slug` (text, unique)
-      - `created_at` (timestamp)
-    
-    - `products`
-      - `id` (uuid, primary key)
-      - `name` (text)
-      - `description` (text)
-      - `price` (numeric)
-      - `category_id` (uuid, foreign key)
-      - `image_url` (text)
-      - `stock` (integer)
-      - `unit` (text)
-      - `created_at` (timestamp)
-    
-    - `cart_items`
-      - `id` (uuid, primary key)
-      - `user_id` (uuid)
-      - `product_id` (uuid, foreign key)
-      - `quantity` (integer)
-      - `created_at` (timestamp)
-  
-  2. Security
-    - Enable RLS on all tables
-    - Add policies for public read access to categories and products
-    - Add policies for authenticated users to manage their cart items
-*/
+-- Enable required extension for UUID generation (if not already enabled)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Create categories table
 CREATE TABLE IF NOT EXISTS categories (
@@ -68,30 +37,39 @@ ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cart_items ENABLE ROW LEVEL SECURITY;
 
--- Policies for categories (public read)
+-- =====================
+-- 🔒 SECURITY POLICIES
+-- =====================
+
+-- Public read access
 CREATE POLICY "Anyone can view categories"
-  ON categories FOR SELECT
+  ON categories
+  FOR SELECT
   USING (true);
 
--- Policies for products (public read)
 CREATE POLICY "Anyone can view products"
-  ON products FOR SELECT
+  ON products
+  FOR SELECT
   USING (true);
 
--- Policies for cart_items
-CREATE POLICY "Users can view own cart items"
-  ON cart_items FOR SELECT
-  USING (true);
+-- Authenticated user control over their own cart
+CREATE POLICY "Users can view their own cart items"
+  ON cart_items
+  FOR SELECT
+  USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own cart items"
-  ON cart_items FOR INSERT
-  WITH CHECK (true);
+CREATE POLICY "Users can insert their own cart items"
+  ON cart_items
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own cart items"
-  ON cart_items FOR UPDATE
-  USING (true)
-  WITH CHECK (true);
+CREATE POLICY "Users can update their own cart items"
+  ON cart_items
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can delete own cart items"
-  ON cart_items FOR DELETE
-  USING (true);
+CREATE POLICY "Users can delete their own cart items"
+  ON cart_items
+  FOR DELETE
+  USING (auth.uid() = user_id);

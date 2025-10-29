@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
-import Header from './components/Header';
-import Hero from './components/Hero';
-import CategoryFilter from './components/CategoryFilter';
-import ProductGrid from './components/ProductGrid';
+
+// Components
+import Admin from './components/Admin';
 import Cart from './components/Cart';
+import CategoryFilter from './components/CategoryFilter';
+import Hero from './components/Hero';
+import Login from './components/Login';
+import ProductGrid from './components/ProductGrid';
+import SignUp from './components/SignUp';
+import Navigation from './components/Navigation';
 import './App.css';
 
 function App() {
@@ -20,37 +26,57 @@ function App() {
     fetchProducts();
   }, []);
 
-  async function fetchCategories() {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('name');
+  const [error, setError] = useState(null);
 
-    if (error) {
-      console.error('Error fetching categories:', error);
-    } else {
+  async function fetchCategories() {
+    try {
+      console.log('Fetching categories...');
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name');
+
+      console.log('Categories response:', { data, error });
+
+      if (error) {
+        throw error;
+      }
+
       setCategories(data || []);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      setError('Failed to load categories. Please try again.');
+      setCategories([]);
     }
   }
 
   async function fetchProducts() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        categories (
-          name
-        )
-      `)
-      .order('name');
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          categories (
+            name
+          )
+        `)
+        .order('name');
 
-    if (error) {
-      console.error('Error fetching products:', error);
-    } else {
+      if (error) {
+        throw error;
+      }
+
       setProducts(data || []);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      setError('Failed to load products. Please try again.');
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const filteredProducts = selectedCategory
@@ -90,48 +116,69 @@ function App() {
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className="app">
-      <Header cartCount={cartCount} onCartClick={() => setIsCartOpen(true)} />
+    <Router>
+      <div className="app">
+        <Navigation cartCount={cartCount} onCartClick={() => setIsCartOpen(true)} />
+        
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/" element={
+            <>
+              <Hero />
+              <main className="main">
+                <div className="container">
+                  <section className="products-section">
+                    <h2 className="section-title">Our Products</h2>
 
-      <Hero />
+                    <CategoryFilter
+                      categories={categories}
+                      selectedCategory={selectedCategory}
+                      onSelectCategory={setSelectedCategory}
+                    />
 
-      <main className="main">
-        <div className="container">
-          <section className="products-section">
-            <h2 className="section-title">Our Products</h2>
+                    {error ? (
+                      <div className="error-message">
+                        {error}
+                        <button onClick={() => {
+                          setError(null);
+                          fetchCategories();
+                          fetchProducts();
+                        }}>
+                          Try Again
+                        </button>
+                      </div>
+                    ) : loading ? (
+                      <div className="loading">Loading products...</div>
+                    ) : (
+                      <ProductGrid
+                        products={filteredProducts}
+                        onAddToCart={handleAddToCart}
+                      />
+                    )}
+                  </section>
+                </div>
+              </main>
+            </>
+          } />
+        </Routes>
 
-            <CategoryFilter
-              categories={categories}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-            />
+        <Cart
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cartItems={cartItems}
+          onUpdateQuantity={handleUpdateQuantity}
+          onRemoveItem={handleRemoveItem}
+        />
 
-            {loading ? (
-              <div className="loading">Loading products...</div>
-            ) : (
-              <ProductGrid
-                products={filteredProducts}
-                onAddToCart={handleAddToCart}
-              />
-            )}
-          </section>
-        </div>
-      </main>
-
-      <Cart
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        cartItems={cartItems}
-        onUpdateQuantity={handleUpdateQuantity}
-        onRemoveItem={handleRemoveItem}
-      />
-
-      <footer className="footer">
-        <div className="container">
-          <p>2025 FreshMart. Quality groceries delivered fresh.</p>
-        </div>
-      </footer>
-    </div>
+        <footer className="footer">
+          <div className="container">
+            <p>2025 FreshMart. Quality groceries delivered fresh.</p>
+          </div>
+        </footer>
+      </div>
+    </Router>
   );
 }
 
