@@ -48,3 +48,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     console.error('Supabase connection test error:', err);
   }
 })();
+
+// Expose supabase client to window during development for easy debugging in browser console
+// Usage in browser console: await window.supabase.auth.getUser()
+if (import.meta.env.DEV) {
+  try {
+    // eslint-disable-next-line no-undef
+    window.supabase = supabase;
+    // eslint-disable-next-line no-console
+    console.log('Supabase client exposed as window.supabase for debugging');
+  } catch (err) {
+    // ignore if window is not available (e.g., server-side)
+  }
+}

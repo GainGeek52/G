@@ -80,9 +80,7 @@ export default function Navigation({ cartCount, onCartClick }) {
             Home
           </Link>
           
-          <Link to="/products" className="nav-link" onClick={closeMenu}>
-            Products
-          </Link>
+          
           
           {isAdmin && (
             <Link to="/admin" className="nav-link admin-link" onClick={closeMenu}>

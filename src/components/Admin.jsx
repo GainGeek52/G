@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
+// Bucket used for product image uploads. Configure in .env as
+// VITE_PRODUCT_IMAGES_BUCKET (defaults to 'product-images')
+const PRODUCT_IMAGES_BUCKET = import.meta.env.VITE_PRODUCT_IMAGES_BUCKET || 'product-images';
+
 export default function Admin() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,30 +20,60 @@ export default function Admin() {
   const [imageFile, setImageFile] = useState(null);
   const [categories, setCategories] = useState([]);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     fetchProducts();
     fetchCategories();
+    // get current user and subscribe to auth changes so RLS authenticated checks work
+    (async () => {
+      try {
+        const {
+          data: { user: currentUser }
+        } = await supabase.auth.getUser();
+        setUser(currentUser ?? null);
+      } catch (err) {
+        console.error('Error getting auth user:', err);
+      }
+    })();
+
+    const { data: { subscription } = {} } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription?.unsubscribe?.();
+    };
   }, []);
 
   async function fetchProducts() {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      // Get current authenticated user (may be null if not signed in)
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      // If no authenticated user, show no products in the admin list
+      const userId = userData?.user?.id;
+      if (!userId) {
+        setProducts([]);
+        return;
+      }
+
+      // Fetch products belonging to the signed-in user
+      const { data: productsData, error: productsError } = await supabase
         .from('products')
-        .select(`
-          *,
-          categories (
-            name
-          )
-        `)
+        .select('*')
+        .eq('user_id', userId)
         .order('name');
 
-      if (error) throw error;
-      setProducts(data || []);
+      if (productsError) throw productsError;
+      setProducts(productsData || []);
     } catch (error) {
       console.error('Error fetching products:', error);
-      alert('Error fetching products');
+      // Show a friendly alert in admin UI but avoid a hard crash
+      alert('Error fetching products: ' + (error?.message || error));
     } finally {
       setLoading(false);
     }
@@ -61,20 +95,28 @@ export default function Admin() {
 
   async function handleAddProduct(e) {
     e.preventDefault();
+    if (!user) {
+      alert('You must be signed in to add products. Please sign in from the Login page.');
+      return;
+    }
     try {
       let productToInsert = { ...newProduct };
 
       // If an image file was selected, upload it to Supabase Storage and set image_url
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
-        const filePath = `product-images/${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+  const filePath = `${PRODUCT_IMAGES_BUCKET}/${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+        // Use configurable bucket name
         const { error: uploadError } = await supabase.storage
-          .from('product-images')
+          .from(PRODUCT_IMAGES_BUCKET)
           .upload(filePath, imageFile, { cacheControl: '3600', upsert: false });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          // Throw so outer catch can handle and provide a helpful message
+          throw uploadError;
+        }
 
-        const { data: publicData } = supabase.storage.from('product-images').getPublicUrl(filePath);
+        const { data: publicData } = supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(filePath);
         productToInsert.image_url = publicData?.publicUrl || '';
       }
 
@@ -98,7 +140,19 @@ export default function Admin() {
       alert('Product added successfully!');
     } catch (error) {
       console.error('Error adding product:', error);
-      alert('Error adding product');
+
+      // Detect common storage bucket not found error and provide actionable guidance
+      const isBucketNotFound =
+        error?.message?.toLowerCase().includes('bucket not found') || error?.status === 404;
+
+      if (isBucketNotFound) {
+        alert(
+          `Storage bucket "${PRODUCT_IMAGES_BUCKET}" not found. Create this bucket in your Supabase project (Storage -> Buckets) or set VITE_PRODUCT_IMAGES_BUCKET to the correct bucket name in your .env and restart the dev server.`
+        );
+      } else {
+        // Generic error message but include the underlying message when available
+        alert(`Error adding product: ${error?.message || 'Unknown error'}`);
+      }
     }
   }
 
@@ -144,6 +198,9 @@ export default function Admin() {
   return (
     <div className="admin-panel">
       <h2 className="section-title">Admin Dashboard</h2>
+      <div style={{ marginBottom: 12 }}>
+        Signed in as: <strong>{user?.email ?? 'Not signed in'}</strong>
+      </div>
 
       <div className="admin-content">
         <div className="product-form-section">
@@ -259,9 +316,14 @@ export default function Admin() {
               </select>
             </div>
 
-            <button type="submit" className="submit-button">
+            <button type="submit" className="submit-button" disabled={!user}>
               {editingProduct ? 'Update Product' : 'Add Product'}
             </button>
+            {!user && (
+              <div style={{ marginTop: 8, color: '#b00' }}>
+                You are not signed in. Please <a href="/login">sign in</a> to manage products.
+              </div>
+            )}
             {editingProduct && (
               <button
                 type="button"
